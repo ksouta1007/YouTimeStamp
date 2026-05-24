@@ -1,0 +1,73 @@
+name: Build RootHide DEB
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "**" ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y perl make xz-utils lz4 zstd
+
+      - name: Cache Theos + SDKs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/theos
+            ${{ github.workspace }}/sdks
+          key: theos-roothide-${{ runner.os }}-v2
+
+      - name: Setup roothide/theos
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d "${GITHUB_WORKSPACE}/theos/.git" ]; then
+            rm -rf "${GITHUB_WORKSPACE}/theos"
+            git clone --depth=1 https://github.com/roothide/theos "${GITHUB_WORKSPACE}/theos"
+          fi
+          if [ ! -d "${GITHUB_WORKSPACE}/sdks/.git" ]; then
+            rm -rf "${GITHUB_WORKSPACE}/sdks"
+            git clone --depth=1 https://github.com/theos/sdks "${GITHUB_WORKSPACE}/sdks"
+          fi
+
+          echo "THEOS=${GITHUB_WORKSPACE}/theos" >> "$GITHUB_ENV"
+          echo "THEOS_SDKS_PATH=${GITHUB_WORKSPACE}/sdks" >> "$GITHUB_ENV"
+
+          # roothide/theos requires bootstrap to fetch compiler + packaging tools
+          "${GITHUB_WORKSPACE}/theos/bin/bootstrap.sh"
+
+      - name: Verify toolchain and packaging tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x "${THEOS}/toolchain/linux/iphone/bin/clang"
+          test -f "${THEOS}/vendor/dm.pl"
+          "${THEOS}/toolchain/linux/iphone/bin/clang" --version | head -n 1
+
+      - name: Build roothide package
+        shell: bash
+        run: |
+          set -euo pipefail
+          make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide
+
+      - name: Upload deb artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: YouTimeStamp-roothide-deb
+          path: packages/*.deb
+          if-no-files-found: error
