@@ -1,0 +1,50 @@
+name: Build RootHide DEB
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "**" ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Theos toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/theos
+            ${{ github.workspace }}/sdks
+          key: theos-roothide-${{ runner.os }}-v1
+
+      - name: Install roothide/theos
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d "${GITHUB_WORKSPACE}/theos" ]; then
+            git clone --depth=1 https://github.com/roothide/theos "${GITHUB_WORKSPACE}/theos"
+          fi
+          if [ ! -d "${GITHUB_WORKSPACE}/sdks" ]; then
+            git clone --depth=1 https://github.com/theos/sdks "${GITHUB_WORKSPACE}/sdks"
+          fi
+          echo "THEOS=${GITHUB_WORKSPACE}/theos" >> "$GITHUB_ENV"
+          echo "THEOS_SDKS_PATH=${GITHUB_WORKSPACE}/sdks" >> "$GITHUB_ENV"
+
+      - name: Build roothide package
+        shell: bash
+        run: |
+          set -euo pipefail
+          make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide
+
+      - name: Upload deb artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: YouTimeStamp-roothide-deb
+          path: packages/*.deb
+          if-no-files-found: error
